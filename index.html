@@ -189,7 +189,7 @@
     <div class="form-card">
         <input type="text" id="user-name" placeholder="Input Nama Calon Penghuni...">
         <div id="display-kamar"></div>
-        <button class="btn-wa" onclick="kirimWA()">Amankan Unit Sekarang</button>
+        <button class="btn-wa" onclick="kirimWA()">Pesan Sekarang</button>
     </div>
    
 <div class="slideshow-container">
@@ -277,7 +277,8 @@ async function muatData() {
             header: true,
             skipEmptyLines: true,
             complete: (res) => {
-                listKamar = res.data;
+                // Filter agar baris kosong di excel tidak bikin error
+                listKamar = res.data.filter(item => item.nomor);
                 tampilkanKamar();
             }
         });
@@ -289,44 +290,59 @@ async function muatData() {
 function tampilkanKamar() {
     const box = document.getElementById('display-kamar');
     box.innerHTML = "";
-    let kosong = 0; let terisi = 0; let adaTampil = 0;
+    let kosong = 0; let terisi = 0;
 
     listKamar.forEach(item => {
         if(!item.nomor) return;
+        
+        // 1. Definisikan status dan harga
         const status = (item.status || "").toLowerCase().trim();
         const isFull = status === "terisi";
         if(isFull) terisi++; else kosong++;
 
         const hAsli = parseInt(item.harga) || 0;
         const hPromo = parseInt(item.promo) || 0;
+        const hFinal = hPromo > 0 ? hPromo : hAsli;
         
+        // 2. Definisikan Tag Promo (Ambil dari kolom promo_tag)
+        const tagKustom = item.promo_tag || "PROMO KHUSUS"; 
+
+        // 3. Filter Tab
         if(tabAktif === 'promo' && hPromo === 0) return;
         if(tabAktif === 'budget' && hAsli >= 1000000) return;
         if(tabAktif === 'premium' && hAsli < 1000000) return;
 
-        adaTampil++;
         const el = document.createElement('div');
         el.className = `room-item ${isFull ? 'item-terisi' : 'item-kosong'}`;
-        const hFinal = hPromo > 0 ? hPromo : hAsli;
 
         if(!isFull) {
             el.onclick = () => {
-                pilihanSaya = `Unit No. ${item.nomor} - Rp ${hFinal.toLocaleString()}`;
+                pilihanSaya = {
+                    nomor: item.nomor,
+                    fasilitas: item.fasilitas,
+                    hargaAsli: hAsli,
+                    hargaFinal: hFinal,
+                    promoTag: hPromo > 0 ? tagKustom : "Harga Normal"
+                };
                 document.querySelectorAll('.room-item').forEach(i => i.classList.remove('selected'));
                 el.classList.add('selected');
             };
         }
 
+        // 4. Render HTML (Layanan sudah dihapus)
         el.innerHTML = `
-            ${hPromo > 0 && !isFull ? `<div class="promo-tag-label">PROMO</div>` : ''}
-            <div>
-                <div style="font-weight:800; font-size:15px;">Unit No. ${item.nomor}</div>
-                <div style="font-size:10px; color:#64748b;">${item.fasilitas}</div>
+            ${hPromo > 0 && !isFull ? `<div class="promo-tag-label">${tagKustom}</div>` : ''}
+            
+            <div style="flex:1">
+                <div style="font-weight:800; font-size:15px; color:var(--res-dark)">Unit No. ${item.nomor}</div>
+                <div style="font-size:10px; color:#64748b; margin-top:2px;">${item.fasilitas}</div>
                 <div class="badge badge-${status}">${isFull ? '🚫 Full' : '✅ Ready'}</div>
             </div>
+
             <div style="text-align:right">
                 ${hPromo > 0 && !isFull ? `<span class="price-old">Rp ${hAsli.toLocaleString()}</span>` : ''}
                 <span class="price-new">Rp ${hFinal.toLocaleString()}</span>
+                <span style="font-size:8px; color:#94a3b8; font-weight:700">/ Bulan</span>
             </div>
         `;
         box.appendChild(el);
@@ -343,20 +359,16 @@ function setTab(kategori, tombol) {
     tampilkanKamar();
 }
 
+// Slideshow Logic
 let slideIndex = 1;
 let slideTimer;
 
-showSlides(slideIndex);
-autoSlides();
-
-// Kontrol Manual (Panah)
 function plusSlides(n) {
-    clearTimeout(slideTimer); // Stop timer saat diklik manual
+    clearTimeout(slideTimer);
     showSlides(slideIndex += n);
-    autoSlides(); // Jalankan lagi timernya
+    autoSlides();
 }
 
-// Kontrol Manual (Dots)
 function currentSlide(n) {
     clearTimeout(slideTimer);
     showSlides(slideIndex = n);
@@ -364,47 +376,71 @@ function currentSlide(n) {
 }
 
 function showSlides(n) {
-    let i;
     let slides = document.getElementsByClassName("mySlides");
     let dots = document.getElementsByClassName("dot");
+    if (slides.length === 0) return;
     
     if (n > slides.length) {slideIndex = 1}    
     if (n < 1) {slideIndex = slides.length}
     
-    for (i = 0; i < slides.length; i++) {
+    for (let i = 0; i < slides.length; i++) {
         slides[i].style.display = "none";  
     }
-    for (i = 0; i < dots.length; i++) {
+    for (let i = 0; i < dots.length; i++) {
         dots[i].className = dots[i].className.replace(" active", "");
     }
     
-    slides[slideIndex-1].style.display = "block";  
-    dots[slideIndex-1].className += " active";
+    if(slides[slideIndex-1]) slides[slideIndex-1].style.display = "block";  
+    if(dots[slideIndex-1]) dots[slideIndex-1].className += " active";
 }
 
-// Fungsi Otomatis
 function autoSlides() {
     slideTimer = setTimeout(function() {
         slideIndex++;
         showSlides(slideIndex);
         autoSlides();
-    }, 4000); // Berganti setiap 4 detik
+    }, 4000);
 }
 
 function updateJam() {
-    document.getElementById('jam-digital').innerText = new Date().toLocaleTimeString('id-ID') + " WIB";
+    const clockEl = document.getElementById('jam-digital');
+    if(clockEl) clockEl.innerText = new Date().toLocaleTimeString('id-ID') + " WIB";
 }
 
 function kirimWA() {
     const nama = document.getElementById('user-name').value;
-    if(!nama || !pilihanSaya) { alert("Isi nama dan pilih unit!"); return; }
-    const teks = `*RESERVASI KOST*\nNama: ${nama}\nUnit: ${pilihanSaya}`;
+    if(!nama) { alert("Harap masukkan nama Anda!"); return; }
+    if(!pilihanSaya) { alert("Silakan pilih unit kamar terlebih dahulu!"); return; }
+
+    const formatRupiah = (angka) => "Rp " + angka.toLocaleString('id-ID');
+
+    const teks = 
+`*RESERVASI UNIT - AUTOCLEAN RESIDENCE*
+--------------------------------------------------
+👤 *DATA CALON PENGHUNI*
+• Nama: *${nama.toUpperCase()}*
+• Tanggal: ${new Date().toLocaleDateString('id-ID')}
+
+🏠 *DETAIL UNIT PILIHAN*
+• Unit Nomor: *${pilihanSaya.nomor}*
+• Fasilitas: ${pilihanSaya.fasilitas}
+
+🎁 *INFO HARGA & PROMO*
+• Status: *${pilihanSaya.promoTag}*
+• Harga Normal: ${formatRupiah(pilihanSaya.hargaAsli)}
+• *Harga Final: ${formatRupiah(pilihanSaya.hargaFinal)} /bulan*
+
+--------------------------------------------------
+_"Saya tertarik dengan unit di atas. Mohon info ketersediaan selanjutnya. Terima kasih."_`;
+
     window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(teks)}`, '_blank');
 }
 
-setInterval(updateJam, 1000);
+// Jalankan fungsi
 updateJam();
+setInterval(updateJam, 1000);
 muatData();
+autoSlides();
 </script>
 </body>
 </html>
